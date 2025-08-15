@@ -1,0 +1,11 @@
+# Configuration example for the Lidarr metadata export
+metadata:
+  update_interval: daily
+
+# connection and auth placeholders (replace as needed)
+database:
+  host: ${MB_DB_HOST}
+  port: ${MB_DB_PORT}
+  name: ${MB_DB_NAME}
+  user: ${MB_DB_USER}
+  pass: ${MB_DB_PASS}
