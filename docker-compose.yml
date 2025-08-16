@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
       POSTGRES_USER: ${MB_DB_USER:-abc}
-      POSTGRES_PASSWORD: ${MB_DB_PASSWORD:-abc}
+      services:
     volumes:
       - ${MB_DB_DATA:-./volumes/musicbrainz-db}:/var/lib/postgresql/data
     healthcheck:
@@ -68,6 +68,8 @@ services:
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
     env_file:
       - .env
     environment:
@@ -87,8 +89,14 @@ services:
 
   mb-replicator:
     build:
-      context: ./docker/musicbrainz/replicator
-      dockerfile: Dockerfile
+      # Use parent musicbrainz directory as build context so Dockerfile can
+      # COPY the local `scripts/` directory into the image (scripts must be
+      # inside the build context). The Dockerfile lives in the replicator
+      # subdirectory but references `scripts/` in the context root.
+      context: ./docker/musicbrainz
+      dockerfile: replicator/Dockerfile
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
     env_file:
       - .env
     volumes:
@@ -115,12 +123,14 @@ services:
 
   mb-indexer:
     build:
-      context: ./docker/musicbrainz/indexer
-      dockerfile: Dockerfile
+      context: ./docker/musicbrainz
+      dockerfile: indexer/Dockerfile
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
     env_file:
       - .env
     volumes:
-      - ./docker/hearring-aid/scripts:/scripts:ro
+      - ./docker/musicbrainz/scripts:/scripts:ro
       - ./volumes/state:/state
     depends_on:
       - musicbrainz
@@ -137,8 +147,10 @@ services:
 
   mb-bootstrap:
     build:
-      context: ./docker/musicbrainz/bootstrap
-      dockerfile: Dockerfile
+      context: ./docker/musicbrainz
+      dockerfile: bootstrap/Dockerfile
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
     env_file:
       - .env
     environment:

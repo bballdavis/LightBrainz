@@ -209,6 +209,32 @@ set -o allexport
 source "$ENV_FILE"
 set +o allexport
 
+# Allow forcing rebuilds from environment. Default is false.
+FORCE_BUILD="${FORCE_BUILD:-false}"
+# Builder image used to provide packages/tools without running apt in service
+# Dockerfiles on constrained hosts. Can be overridden in .env
+MB_BUILDER_IMAGE="${MB_BUILDER_IMAGE:-lightbrainz/musicbrainz-builder:latest}"
+
+ensure_builder_image() {
+  local img="$MB_BUILDER_IMAGE" ctx="$SCRIPT_DIR/docker/builders/musicbrainz-builder"
+  if docker image inspect "$img" >/dev/null 2>&1 && [[ "${FORCE_BUILD,,}" != "true" ]]; then
+    echo "[setup] builder image $img already present; skipping build"
+    return 0
+  fi
+  if [[ ! -d "$ctx" ]]; then
+    echo "[setup] builder context $ctx not found; skipping builder build" >&2
+    return 1
+  fi
+  echo "[setup] building builder image $img from $ctx"
+  if docker build -t "$img" "$ctx"; then
+    echo "[setup] built builder image $img"
+    return 0
+  else
+    echo "ERROR: failed to build builder image $img" >&2
+    return 1
+  fi
+}
+
 # If the setup intends to import dumps, require a replication access token.
 if [[ "${MB_IMPORT_DUMPS:-true}" == "true" && -z "${MB_REPLICATION_ACCESS_TOKEN:-}" ]]; then
   echo "ERROR: MB_IMPORT_DUMPS is enabled but MB_REPLICATION_ACCESS_TOKEN is not set in $ENV_FILE." >&2
@@ -223,9 +249,10 @@ BASE_IMAGE_NAME="${MB_BASE_IMAGE:-metabrainz/musicbrainz-server:latest}"
 BASE_REPO_TARBALL="${MB_BASE_REPO_TARBALL:-https://codeload.github.com/metabrainz/musicbrainz-docker/tar.gz/master}"
 ensure_base_image() {
   local img="$BASE_IMAGE_NAME" tmp
+  local image_present=0
   if docker image inspect "$img" >/dev/null 2>&1; then
-    echo "[setup] base image $img already present locally"
-    return 0
+    image_present=1
+    echo "[setup] base image $img present locally; will verify before skipping build"
   fi
   # Query upstream commit SHA for master branch so we can skip building when
   # the built image already matches that SHA. If this check fails, we'll
@@ -234,11 +261,13 @@ ensure_base_image() {
   upstream_sha=$(curl -fsSL "https://api.github.com/repos/metabrainz/musicbrainz-docker/commits/master" 2>/dev/null | grep -m1 '"sha"' | sed -E 's/[^[:alnum:]]*"sha"[:space:]*"([a-f0-9]+)".*/\1/') || true
   if [[ -n "$upstream_sha" ]]; then
     echo "[setup] upstream master commit: $upstream_sha"
-    # Check existing image label
-    existing_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.upstream_sha"}}' "$img" 2>/dev/null || true)
-    if [[ -n "$existing_sha" && "$existing_sha" == "$upstream_sha" ]]; then
-      echo "[setup] local image $img matches upstream commit $upstream_sha; skipping build"
-      return 0
+    # If an image exists, check existing image label against upstream commit
+    if [[ $image_present -eq 1 && "${FORCE_BUILD,,}" != "true" ]]; then
+      existing_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.upstream_sha"}}' "$img" 2>/dev/null || true)
+      if [[ -n "$existing_sha" && "$existing_sha" == "$upstream_sha" ]]; then
+        echo "[setup] local image $img matches upstream commit $upstream_sha; skipping build"
+        return 0
+      fi
     fi
   else
     echo "[setup] warning: could not determine upstream commit SHA; will build image"
@@ -246,8 +275,29 @@ ensure_base_image() {
 
   echo "[setup] building base image $img from upstream 'master' tarball..."
   tmp=$(mktemp -d)
-  if ! curl -fsSL "$BASE_REPO_TARBALL" | tar -xzf - -C "$tmp" --strip-components=1; then
+  tarball="$tmp/upstream.tar.gz"
+  echo "[setup] downloading upstream tarball to $tarball..."
+  if ! curl -fsSL "$BASE_REPO_TARBALL" -o "$tarball"; then
     echo "ERROR: failed to download upstream repository tarball $BASE_REPO_TARBALL" >&2
+    rm -rf "$tmp" || true
+    return 1
+  fi
+  # compute tarball checksum for later verification
+  if command -v sha256sum >/dev/null 2>&1; then
+    tarball_sha256=$(sha256sum "$tarball" | awk '{print $1}')
+  elif command -v shasum >/dev/null 2>&1; then
+    tarball_sha256=$(shasum -a 256 "$tarball" | awk '{print $1}')
+  else
+    tarball_sha256=""
+  fi
+  if [[ -n "$tarball_sha256" ]]; then
+    echo "[setup] upstream tarball sha256: $tarball_sha256"
+  else
+    echo "[setup] warning: sha256 utility not available; skipping tarball checksum"
+  fi
+  echo "[setup] extracting tarball..."
+  if ! tar -xzf "$tarball" -C "$tmp" --strip-components=1; then
+    echo "ERROR: failed to extract upstream repository tarball $BASE_REPO_TARBALL" >&2
     rm -rf "$tmp" || true
     return 1
   fi
@@ -260,12 +310,39 @@ ensure_base_image() {
     build_ctx="$tmp"
     echo "[setup] using build context $build_ctx"
   fi
+  # compute build-context checksum so we can verify local images built from
+  # the exact same sources and skip rebuilding when appropriate
+  build_ctx_sha256=""
+  if command -v sha256sum >/dev/null 2>&1; then
+    build_ctx_sha256=$(tar -C "$build_ctx" -c . | sha256sum | awk '{print $1}') || true
+  elif command -v shasum >/dev/null 2>&1; then
+    build_ctx_sha256=$(tar -C "$build_ctx" -c . | shasum -a 256 | awk '{print $1}') || true
+  fi
+  if [[ -n "$build_ctx_sha256" ]]; then
+    echo "[setup] build context sha256: $build_ctx_sha256"
+    if [[ $image_present -eq 1 && "${FORCE_BUILD,,}" != "true" ]]; then
+      existing_build_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.build_context_sha256"}}' "$img" 2>/dev/null || true)
+      if [[ -n "$existing_build_sha" && "$existing_build_sha" == "$build_ctx_sha256" ]]; then
+        echo "[setup] local image $img matches build-context checksum; skipping build"
+        rm -rf "$tmp" || true
+        return 0
+      fi
+    fi
+  else
+    echo "[setup] warning: sha256 utility not available; skipping build-context checksum verification"
+  fi
   echo "[setup] starting docker build (this may take several minutes)"
   # Build with a label so we can detect whether the image corresponds to a
   # particular upstream commit in future runs.
   build_cmd=(docker build -t "$img")
   if [[ -n "$upstream_sha" ]]; then
     build_cmd+=(--label "lightbrainz.upstream_sha=$upstream_sha")
+  fi
+  if [[ -n "$tarball_sha256" ]]; then
+    build_cmd+=(--label "lightbrainz.upstream_tarball_sha256=$tarball_sha256")
+  fi
+  if [[ -n "$build_ctx_sha256" ]]; then
+    build_cmd+=(--label "lightbrainz.build_context_sha256=$build_ctx_sha256")
   fi
   build_cmd+=("$build_ctx")
   if "${build_cmd[@]}"; then
@@ -341,7 +418,17 @@ echo "Waiting for database to be healthy..."
 wait_healthy musicbrainz-db || echo "Warning: db health not reported healthy; continuing"
 
 echo "Running bootstrap (dumps import)..."
-if ! ensure_base_image || ! docker compose run --build --rm mb-bootstrap; then
+if [[ -n "${MB_DUMPS_URL:-}" ]]; then
+  echo "[setup] checking MB_DUMPS_URL: $MB_DUMPS_URL"
+  if command -v curl >/dev/null 2>&1; then
+    if curl -I --max-time 10 "$MB_DUMPS_URL" >/dev/null 2>&1; then
+      curl -I --max-time 10 "$MB_DUMPS_URL" | egrep -i 'HTTP/|Content-Length:|Last-Modified:|Date:' || true
+    else
+      echo "[setup] warning: MB_DUMPS_URL $MB_DUMPS_URL not reachable via HEAD" >&2
+    fi
+  fi
+fi
+if ! ensure_builder_image || ! ensure_base_image || ! docker compose run --build --rm mb-bootstrap; then
   echo "[setup] Bootstrap failed; replication may catch up."
 fi
 

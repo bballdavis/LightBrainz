@@ -5,7 +5,7 @@ ARG BASE_IMAGE=metabrainz/musicbrainz-server:latest
 FROM ${BASE_IMAGE}
 
 WORKDIR /app
-COPY ../scripts/ /scripts/
+COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
 
 ENTRYPOINT ["/bin/sh", "-c"]
