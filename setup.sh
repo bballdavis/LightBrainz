@@ -200,18 +200,18 @@ if ! grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' "$PROJECT_ROOT/.env"; then
   exit 1
 fi
 
-# Load variables from $PROJECT_ROOT/.env into the script environment so
+# Load variables from the chosen env file into the script environment so
 # directory paths defined there are respected by this setup script. We export
 # them so any child processes (docker-compose) can also see them where
 # appropriate.
 set -o allexport
-source "$PROJECT_ROOT/.env"
+source "$ENV_FILE"
 set +o allexport
 
 # If the setup intends to import dumps, require a replication access token.
 if [[ "${MB_IMPORT_DUMPS:-true}" == "true" && -z "${MB_REPLICATION_ACCESS_TOKEN:-}" ]]; then
-  echo "ERROR: MB_IMPORT_DUMPS is enabled but MB_REPLICATION_ACCESS_TOKEN is not set in $PROJECT_ROOT/.env." >&2
-  echo "Obtain a replication access token from MetaBrainz and set MB_REPLICATION_ACCESS_TOKEN in $PROJECT_ROOT/.env before re-running." >&2
+  echo "ERROR: MB_IMPORT_DUMPS is enabled but MB_REPLICATION_ACCESS_TOKEN is not set in $ENV_FILE." >&2
+  echo "Obtain a replication access token from MetaBrainz and set MB_REPLICATION_ACCESS_TOKEN in $ENV_FILE before re-running." >&2
   exit 1
 fi
 
@@ -268,7 +268,7 @@ wait_healthy() {
   done
 }
 
-env_val() { grep -E "^$1=" "$PROJECT_ROOT/.env" 2>/dev/null | head -n1 | cut -d= -f2-; }
+env_val() { grep -E "^$1=" "$ENV_FILE" 2>/dev/null | head -n1 | cut -d= -f2-; }
 
 echo "Starting core services: musicbrainz-db, redis, search..."
 docker compose up -d musicbrainz-db redis search
