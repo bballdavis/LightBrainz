@@ -91,6 +91,18 @@ else
   echo "[setup] .env: NOT found at $SCRIPT_DIR/.env"
 fi
 
+# Default PROJECT_ROOT: when the script is running from inside a transient
+# build directory (basename == build) we want persistent data to live one
+# level up. Otherwise the project root defaults to the script directory.
+if [[ -z "${PROJECT_ROOT:-}" ]]; then
+  if [[ "$(basename "$SCRIPT_DIR")" == "build" ]]; then
+    PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
+  else
+    PROJECT_ROOT="$SCRIPT_DIR"
+  fi
+fi
+echo "[setup] project root: $PROJECT_ROOT"
+
 # Require a local `.env` file. Do not auto-create or download it here; fail
 # fast so users explicitly create and review their configuration before
 # running the setup. This prevents accidental overwrites or corrupted files.
