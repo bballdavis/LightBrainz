@@ -76,9 +76,11 @@ else
     exit 1
   fi
   echo "[setup] Repository extracted into $BUILD_DIR; running setup from extracted copy"
-  # Export PROJECT_ROOT so the extracted setup will place host volumes under the
-  # parent directory (the directory the user intended), not inside the build dir.
-  exec PROJECT_ROOT="$PARENT_DIR" bash "$BUILD_DIR/setup.sh" "$@"
+  # Run the extracted setup with PROJECT_ROOT set in its environment so the
+  # extracted script places host volumes under the parent directory (the
+  # directory the user intended), not inside the build dir. Use `env` to avoid
+  # exec parsing issues on some shells.
+  exec env PROJECT_ROOT="$PARENT_DIR" bash "$BUILD_DIR/setup.sh" "$@"
 fi
 
 # Debug feedback: show resolved repository root and whether a `.env` file is
@@ -106,49 +108,74 @@ echo "[setup] project root: $PROJECT_ROOT"
 # Require a local `.env` file. Do not auto-create or download it here; fail
 # fast so users explicitly create and review their configuration before
 # running the setup. This prevents accidental overwrites or corrupted files.
-if [[ ! -f .env ]]; then
-  cat >&2 <<'ERR'
-ERROR: .env not found in the repository root.
-Create one from the included example and edit it before running this script:
+if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+  echo "[setup] .env not found in $PROJECT_ROOT; attempting to create from .env.example and exiting so you can edit it."
+  if [[ -f "$PROJECT_ROOT/.env.example" ]]; then
+    cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
+    echo "Created $PROJECT_ROOT/.env from $PROJECT_ROOT/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
+    exit 0
+  fi
 
-  cp .env.example .env
-  # then edit .env to set ports, tokens, and paths
+  if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+    cp "$SCRIPT_DIR/.env.example" "$PROJECT_ROOT/.env"
+    echo "Created $PROJECT_ROOT/.env from $SCRIPT_DIR/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
+    exit 0
+  fi
 
-Or download the example manually and edit it:
-
-  curl -fsSL https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example -o .env
-
-After creating and editing .env, re-run this script.
-ERR
-  exit 1
+  echo "Local .env.example not found; attempting to download .env.example from GitHub..."
+  url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
+  tmp=$(mktemp)
+  if curl -fsSL "$url" -o "$tmp"; then
+    if [[ -s "$tmp" ]]; then
+      mv "$tmp" "$PROJECT_ROOT/.env"
+      echo "Downloaded .env.example -> $PROJECT_ROOT/.env. Please edit it and re-run this script."
+      exit 0
+    else
+      rm -f "$tmp"
+      echo "Failed to download a non-empty .env.example from $url" >&2
+      exit 1
+    fi
+  else
+    echo "Failed to download .env.example from $url" >&2
+    rm -f "$tmp" || true
+    exit 1
+  fi
 fi
 
 # At this point .env exists. Perform sanity checks and fail fast if it looks wrong.
 # .env must be non-empty
-if [[ ! -s .env ]]; then
-  echo "ERROR: .env exists but is empty. Replace from .env.example or restore backup." >&2
+if [[ ! -s "$PROJECT_ROOT/.env" ]]; then
+  echo "ERROR: $PROJECT_ROOT/.env exists but is empty. Replace from .env.example or restore backup." >&2
   exit 1
 fi
 
 # Reject files that look like shell scripts accidentally saved as .env
-if grep -E -q '(^#!|^set[[:space:]]+-e|BASH_SOURCE|SCRIPT_DIR|function[[:space:]]|\$\{BASH_SOURCE|\$0)' .env; then
-  echo "ERROR: .env appears to contain shell script content. Please restore a valid .env from .env.example." >&2
+if grep -E -q '(^#!|^set[[:space:]]+-e|BASH_SOURCE|SCRIPT_DIR|function[[:space:]]|\$\{BASH_SOURCE|\$0)' "$PROJECT_ROOT/.env"; then
+  echo "ERROR: $PROJECT_ROOT/.env appears to contain shell script content. Please restore a valid .env from .env.example." >&2
   echo "If you intentionally saved .env from a downloaded file, edit it to only contain KEY=VALUE entries." >&2
   exit 1
 fi
 
 # Ensure there is at least one KEY=VALUE line
-if ! grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' .env; then
-  echo "ERROR: .env does not contain valid KEY=VALUE lines. Restore .env from .env.example." >&2
+if ! grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' "$PROJECT_ROOT/.env"; then
+  echo "ERROR: $PROJECT_ROOT/.env does not contain valid KEY=VALUE lines. Restore .env from .env.example." >&2
   exit 1
 fi
 
-# Load variables from .env into the script environment so directory paths
-# defined there are respected by this setup script. We export them so any
-# child processes (docker-compose) can also see them where appropriate.
+# Load variables from $PROJECT_ROOT/.env into the script environment so
+# directory paths defined there are respected by this setup script. We export
+# them so any child processes (docker-compose) can also see them where
+# appropriate.
 set -o allexport
-source .env
+source "$PROJECT_ROOT/.env"
 set +o allexport
+
+# If the setup intends to import dumps, require a replication access token.
+if [[ "${MB_IMPORT_DUMPS:-true}" == "true" && -z "${MB_REPLICATION_ACCESS_TOKEN:-}" ]]; then
+  echo "ERROR: MB_IMPORT_DUMPS is enabled but MB_REPLICATION_ACCESS_TOKEN is not set in $PROJECT_ROOT/.env." >&2
+  echo "Obtain a replication access token from MetaBrainz and set MB_REPLICATION_ACCESS_TOKEN in $PROJECT_ROOT/.env before re-running." >&2
+  exit 1
+fi
 
 resolve_path() {
   local p="$1" base
@@ -203,7 +230,7 @@ wait_healthy() {
   done
 }
 
-env_val() { grep -E "^$1=" .env 2>/dev/null | head -n1 | cut -d= -f2-; }
+env_val() { grep -E "^$1=" "$PROJECT_ROOT/.env" 2>/dev/null | head -n1 | cut -d= -f2-; }
 
 echo "Starting core services: musicbrainz-db, redis, search..."
 docker compose up -d musicbrainz-db redis search
