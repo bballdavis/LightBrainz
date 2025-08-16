@@ -10,16 +10,56 @@ sslmode="${MB_DB_SSLMODE:-disable}"
 
 export PGPASSWORD="$pass"
 
+# Skip if disabled
+if [[ "${ENABLE_REPLICATION:-true}" != "true" ]]; then
+	echo "[mb-replicator] ENABLE_REPLICATION=false; skipping."
+	exit 0
+fi
+
 # Skip if DB not initialized (artist table absent)
 if ! psql -h "$host" -p "$port" -U "$user" -d "$db" -Atc "select to_regclass('artist') is not null;" | grep -qi t; then
 	echo "[mb-replicator] DB not initialized yet. Skipping replication cycle."
 	exit 0
 fi
 
+# Require token
 if [[ -z "${MB_REPLICATION_ACCESS_TOKEN:-}" ]]; then
 	echo "[mb-replicator] Missing MB_REPLICATION_ACCESS_TOKEN; cannot replicate."
 	exit 0
 fi
 
-echo "[mb-replicator] (placeholder) Apply replication packets of type ${MB_REPLICATION_TYPE:-hourly}"
-# TODO: Implement replication per official musicbrainz-docker instructions using the token.
+# Map env for official scripts
+export MUSICBRAINZ_POSTGRES_SERVER="$host"
+export POSTGRES_USER="$user"
+export POSTGRES_PASSWORD="$pass"
+
+# Write token to the expected secrets path
+SECRETS_DIR="/run/secrets"
+TOKEN_FILE="$SECRETS_DIR/metabrainz_access_token"
+mkdir -p "$SECRETS_DIR"
+chmod 755 "$SECRETS_DIR"
+echo -n "$MB_REPLICATION_ACCESS_TOKEN" > "$TOKEN_FILE"
+chmod 600 "$TOKEN_FILE"
+
+# Prepare logging
+LOG_DIR="/var/log"
+LOG_FILE="$LOG_DIR/mirror.log"
+mkdir -p "$LOG_DIR"
+touch "$LOG_FILE"
+chmod 644 "$LOG_FILE"
+
+echo "[mb-replicator] Starting replication via mirror.sh (type=${MB_REPLICATION_TYPE:-hourly})"
+
+# Run the official replication script once (as in musicbrainz-docker)
+# Use carton to ensure Perl deps/env are applied
+set +e
+carton exec -- /musicbrainz-server/admin/cron/mirror.sh 2>&1 | tee -a "$LOG_FILE"
+rc=${PIPESTATUS[0]}
+set -e
+
+if [[ $rc -ne 0 ]]; then
+	echo "[mb-replicator] Replication failed with exit code $rc"
+	exit $rc
+fi
+
+echo "[mb-replicator] Replication completed successfully."

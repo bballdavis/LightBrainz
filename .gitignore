@@ -1,0 +1,22 @@
+# Environment files
+.env
+.env.*
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Editors/IDE
+.vscode/
+.idea/
+
+# Docker/data
+volumes/
+backups/
+logs/
+
+# Compose overrides
+docker-compose.override.yml
+
+# Project-specific (requested)
+.github/

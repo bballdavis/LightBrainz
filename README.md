@@ -14,11 +14,11 @@ Project stack is at the repository root. Use the root `setup.ps1` to start it.
 1. Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) (if not already installed).
 2. Clone this repository.
 3. Copy example configs and adjust as needed.
-4. Run the setup script:
+4. Run the setup script (uses .env by default):
    ```powershell
    ./setup.ps1
    ```
-5. Access MusicBrainz at http://localhost:5800 (configurable via .env).
+5. Access MusicBrainz at http://localhost:5800 (configurable via .env). A sample .env is included for local testing.
 
 ## Files
 - `docker-compose.yml`: Main compose file for services

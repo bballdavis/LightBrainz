@@ -1,22 +1,15 @@
-version: '3.8'
-
 services:
   musicbrainz-db:
     image: postgres:13
-    command:
-      - postgres
-      - -c
-      - shared_buffers=${MB_DB_SHARED_BUFFERS:-2GB}
-      - -c
-      - shared_preload_libraries=${MB_DB_PRELOAD_LIBS:-}
+    command: ["postgres", "-c", "shared_buffers=${MB_DB_SHARED_BUFFERS:-2GB}", "-c", "shared_preload_libraries=${MB_DB_PRELOAD_LIBS:-}"]
     environment:
       POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
-      POSTGRES_USER: ${MB_DB_USER:-musicbrainz}
-      POSTGRES_PASSWORD: ${MB_DB_PASSWORD:-musicbrainz}
+      POSTGRES_USER: ${MB_DB_USER:-abc}
+      POSTGRES_PASSWORD: ${MB_DB_PASSWORD:-abc}
     volumes:
       - ${MB_DB_DATA:-./volumes/musicbrainz-db}:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${MB_DB_USER:-musicbrainz} -d ${MB_DB_NAME:-musicbrainz}"]
+      test: ["CMD-SHELL", "pg_isready -U ${MB_DB_USER:-abc} -d ${MB_DB_NAME:-musicbrainz}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -35,7 +28,9 @@ services:
   search:
     image: solr:8
     environment:
-      - SOLR_HEAP=${MB_SOLR_HEAP:-2g}
+      SOLR_HEAP: ${MB_SOLR_HEAP:-2g}
+    env_file:
+      - .env
     ports:
       - "${MB_SOLR_PORT:-8983}:8983"
     volumes:
@@ -45,111 +40,113 @@ services:
     build:
       context: ./docker/musicbrainz
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       MB_DB_TYPE: postgres
       MB_DB_HOST: musicbrainz-db
       MB_DB_PORT: 5432
       MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-musicbrainz}
-      MB_DB_PASS: ${MB_DB_PASSWORD:-musicbrainz}
+      MB_DB_USER: ${MB_DB_USER:-abc}
+      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
       MB_REDIS_HOST: redis
       SEARCH_SERVER: http://search:8983/solr
-  MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
-  MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
-  MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
-  MB_DUMPS_URL: ${MB_DUMPS_URL:-}
-  MB_INDEX_ENTITIES: ${MB_INDEX_ENTITIES:-artist,release}
+      MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
+      MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
+      MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
+      MB_DUMPS_URL: ${MB_DUMPS_URL:-}
+      MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
     ports:
       - "${MB_WEB_PORT:-5800}:5000"
     depends_on:
       - musicbrainz-db
       - redis
       - search
+    restart: unless-stopped
 
   hearring-aid:
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       MB_DB_HOST: musicbrainz-db
       MB_DB_PORT: 5432
       MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-musicbrainz}
-      MB_DB_PASS: ${MB_DB_PASSWORD:-musicbrainz}
+      MB_DB_USER: ${MB_DB_USER:-abc}
+      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
       MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
       OUTPUT_DIR: /data
-  HA_CRON_SCHEDULE: ${HA_CRON_SCHEDULE:-weekly}
+      HA_CRON_SCHEDULE: ${HA_CRON_SCHEDULE:-weekly}
     volumes:
       - ${HA_OUTPUT_DIR:-./volumes/hearring-aid-data}:/data
     depends_on:
       - musicbrainz-db
+    restart: unless-stopped
 
   mb-replicator:
-    image: alpine:3.19
+    build:
+      context: ./docker/musicbrainz/replicator
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./docker/musicbrainz/scripts:/scripts:ro
+      - ./volumes/state:/state
+    depends_on:
+      - musicbrainz-db
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-lc"]
     environment:
+      SERVICE_ID: mb-replicator
+      RUN_CMD: /scripts/replicate.sh
       REPLICATION_FREQUENCY: ${REPLICATION_FREQUENCY:-weekly}
+      ENABLE_REPLICATION: ${ENABLE_REPLICATION:-true}
       MB_DB_HOST: musicbrainz-db
       MB_DB_PORT: 5432
       MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-musicbrainz}
-      MB_DB_PASSWORD: ${MB_DB_PASSWORD:-musicbrainz}
+      MB_DB_USER: ${MB_DB_USER:-abc}
+      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
       MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
       MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
       MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
-    volumes:
-      - ./docker/musicbrainz/scripts:/scripts:ro
-    depends_on:
-      - musicbrainz-db
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -e
-      case "$REPLICATION_FREQUENCY" in 
-        daily) SLEEP=86400;;
-        weekly) SLEEP=604800;;
-        monthly) SLEEP=2592000;;
-        *) SLEEP=86400;;
-      esac
-      while true; do
-        echo "[mb-replicator] Running replication cycle...";
-        /bin/sh /scripts/replicate.sh || true;
-        sleep "$SLEEP";
-      done
+    command: "/scripts/scheduler.sh"
 
   mb-indexer:
-    image: alpine:3.19
-    environment:
-      INDEX_FREQUENCY: ${INDEX_FREQUENCY:-weekly}
-      MB_INDEX_ENTITIES: ${MB_INDEX_ENTITIES:-artist,release}
+    build:
+      context: ./docker/musicbrainz/indexer
+      dockerfile: Dockerfile
+    env_file:
+      - .env
     volumes:
       - ./docker/hearring-aid/scripts:/scripts:ro
+      - ./volumes/state:/state
     depends_on:
       - musicbrainz
       - search
-    entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -e
-      case "$INDEX_FREQUENCY" in 
-        daily) SLEEP=86400;;
-        weekly) SLEEP=604800;;
-        monthly) SLEEP=2592000;;
-        *) SLEEP=86400;;
-      esac
-      while true; do
-        echo "[mb-indexer] Running index cycle...";
-        /bin/sh /scripts/reindex.sh || true;
-        sleep "$SLEEP";
-      done
+    restart: unless-stopped
+    entrypoint: ["/bin/bash", "-lc"]
+    environment:
+      SERVICE_ID: mb-indexer
+      RUN_CMD: /scripts/reindex.sh
+      INDEX_FREQUENCY: ${INDEX_FREQUENCY:-weekly}
+      MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
+      ENABLE_INDEXING: ${ENABLE_INDEXING:-true}
+    command: "/scripts/scheduler.sh"
 
   mb-bootstrap:
     build:
       context: ./docker/musicbrainz/bootstrap
       dockerfile: Dockerfile
+    env_file:
+      - .env
     environment:
       MB_DB_HOST: musicbrainz-db
       MB_DB_PORT: 5432
       MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-musicbrainz}
-      MB_DB_PASSWORD: ${MB_DB_PASSWORD:-musicbrainz}
+      MB_DB_USER: ${MB_DB_USER:-abc}
+      MB_DB_PASSWORD: ${MB_DB_PASSWORD:-abc}
       MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
       MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
       MB_DUMPS_URL: ${MB_DUMPS_URL:-}
