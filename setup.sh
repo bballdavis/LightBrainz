@@ -220,7 +220,7 @@ fi
 ## the upstream `main` branch tarball. There is no fallback: the image must be
 ## built from upstream sources (no pull or alternate branches).
 BASE_IMAGE_NAME="${MB_BASE_IMAGE:-metabrainz/musicbrainz-server:latest}"
-BASE_REPO_TARBALL="${MB_BASE_REPO_TARBALL:-https://github.com/metabrainz/musicbrainz-docker/archive/refs/heads/main.tar.gz}"
+BASE_REPO_TARBALL="${MB_BASE_REPO_TARBALL:-https://codeload.github.com/metabrainz/musicbrainz-docker/tar.gz/master}"
 ensure_base_image() {
   local img="$BASE_IMAGE_NAME" tmp
   if docker image inspect "$img" >/dev/null 2>&1; then
