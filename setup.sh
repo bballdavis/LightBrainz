@@ -234,8 +234,17 @@ ensure_base_image() {
     rm -rf "$tmp" || true
     return 1
   fi
-  echo "[setup] downloaded upstream sources; starting docker build (this may take several minutes)"
-  if docker build -t "$img" "$tmp"; then
+  echo "[setup] downloaded upstream sources; locating build context..."
+  # Prefer build context at build/musicbrainz (as upstream repo structures Dockerfile there)
+  if [[ -d "$tmp/build/musicbrainz" ]]; then
+    build_ctx="$tmp/build/musicbrainz"
+    echo "[setup] using build context $build_ctx"
+  else
+    build_ctx="$tmp"
+    echo "[setup] using build context $build_ctx"
+  fi
+  echo "[setup] starting docker build (this may take several minutes)"
+  if docker build -t "$img" "$build_ctx"; then
     echo "[setup] built and tagged base image $img"
     rm -rf "$tmp" || true
     return 0
