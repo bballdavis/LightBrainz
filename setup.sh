@@ -216,6 +216,45 @@ if [[ "${MB_IMPORT_DUMPS:-true}" == "true" && -z "${MB_REPLICATION_ACCESS_TOKEN:
   exit 1
 fi
 
+# Ensure the MusicBrainz base image is available locally. Prefer an existing
+# image, try pulling, and finally build from the upstream github tarball if
+# necessary (avoids requiring git). The base image name can be overridden via
+# `MB_BASE_IMAGE` in .env.
+BASE_IMAGE_NAME="${MB_BASE_IMAGE:-metabrainz/musicbrainz-server:latest}"
+BASE_REPO_TARBALL="${MB_BASE_REPO_TARBALL:-https://github.com/metabrainz/musicbrainz-docker/archive/refs/heads/main.tar.gz}"
+ensure_base_image() {
+  local img="$BASE_IMAGE_NAME" tmp
+  if docker image inspect "$img" >/dev/null 2>&1; then
+    echo "[setup] base image $img already present locally"
+    return 0
+  fi
+  # Prefer building from upstream sources (no git required). If build fails
+  # fall back to attempting a docker pull.
+  echo "[setup] attempting to build base image $img from upstream repository tarball..."
+  tmp=$(mktemp -d)
+  if curl -fsSL "$BASE_REPO_TARBALL" | tar -xzf - -C "$tmp" --strip-components=1; then
+    echo "[setup] downloaded upstream sources; building..."
+    if docker build -t "$img" "$tmp"; then
+      echo "[setup] built and tagged base image $img"
+      rm -rf "$tmp" || true
+      return 0
+    else
+      echo "[setup] build from upstream failed; will attempt to pull $img from registry..."
+      rm -rf "$tmp" || true
+    fi
+  else
+    echo "[setup] failed to download upstream tarball; will attempt to pull $img from registry..."
+    rm -rf "$tmp" || true
+  fi
+
+  if docker pull "$img" >/dev/null 2>&1; then
+    echo "[setup] successfully pulled $img"
+    return 0
+  fi
+  echo "ERROR: unable to obtain base image $img (build and pull both failed)" >&2
+  return 1
+}
+
 resolve_path() {
   local p="$1" base
   [[ -z "$p" ]] && return 1
@@ -278,7 +317,7 @@ echo "Waiting for database to be healthy..."
 wait_healthy musicbrainz-db || echo "Warning: db health not reported healthy; continuing"
 
 echo "Running bootstrap (dumps import)..."
-if ! docker compose run --build --rm mb-bootstrap; then
+if ! ensure_base_image || ! docker compose run --build --rm mb-bootstrap; then
   echo "[setup] Bootstrap failed; replication may catch up."
 fi
 
