@@ -123,8 +123,8 @@ if [[ "$(basename "$SCRIPT_DIR")" == "build" ]]; then
       echo "Created $SCRIPT_DIR/.env from $SCRIPT_DIR/.env.example. Please edit $SCRIPT_DIR/.env and re-run this script."
       exit 0
     fi
-    echo "Local .env.example not found in build; attempting to download .env.example from GitHub..."
-    url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
+  echo "Local .env.example not found in build; attempting to download .env.example from GitHub..."
+  url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
     tmp=$(mktemp)
     if curl -fsSL "$url" -o "$tmp"; then
       if [[ -s "$tmp" ]]; then
@@ -159,8 +159,8 @@ else
       exit 0
     fi
 
-    echo "Local .env.example not found; attempting to download .env.example from GitHub..."
-    url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
+  echo "Local .env.example not found; attempting to download .env.example from GitHub..."
+  url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
     tmp=$(mktemp)
     if curl -fsSL "$url" -o "$tmp"; then
       if [[ -s "$tmp" ]]; then
