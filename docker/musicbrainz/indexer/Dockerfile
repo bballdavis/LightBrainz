@@ -5,4 +5,4 @@ RUN python3 -m pip install --no-cache-dir sir || true
 WORKDIR /app
 COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
-ENTRYPOINT ["/bin/bash", "-lc", "/scripts/scheduler.sh"]
+ENTRYPOINT ["/scripts/scheduler.sh"]

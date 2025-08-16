@@ -13,6 +13,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      default:
+        aliases:
+          - db
 
   redis:
     image: redis:7
@@ -24,6 +28,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      default:
+        aliases:
+          - mq
 
   search:
     image: solr:8
@@ -37,7 +45,8 @@ services:
       - ${MB_SOLR_DATA:-./volumes/musicbrainz-search}:/var/solr
 
   musicbrainz:
-    build:
+  image: lightbrainz/musicbrainz:latest
+  build:
       context: ./docker/musicbrainz
       dockerfile: Dockerfile
     env_file:
@@ -65,6 +74,7 @@ services:
     restart: unless-stopped
 
   hearring-aid:
+    image: lightbrainz/hearring-aid:latest
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
@@ -97,6 +107,7 @@ services:
       dockerfile: replicator/Dockerfile
       args:
         BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    image: lightbrainz/mb-replicator:latest
     env_file:
       - .env
     volumes:
@@ -127,6 +138,7 @@ services:
       dockerfile: indexer/Dockerfile
       args:
         BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    image: lightbrainz/mb-indexer:latest
     env_file:
       - .env
     volumes:
@@ -151,6 +163,7 @@ services:
       dockerfile: bootstrap/Dockerfile
       args:
         BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    image: lightbrainz/mb-bootstrap:latest
     env_file:
       - .env
     environment:
