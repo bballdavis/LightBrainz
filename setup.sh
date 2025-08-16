@@ -176,7 +176,15 @@ SOLR_DIR="$(resolve_path "${MB_SOLR_DATA:-volumes/musicbrainz-search}")"
 REDIS_DIR="$(resolve_path "${MB_REDIS_DATA:-volumes/musicbrainz-redis}")"
 HA_DIR="$(resolve_path "${HA_OUTPUT_DIR:-volumes/hearring-aid-data}")"
 
-mkdir -p "$DB_DIR" "$SOLR_DIR" "$REDIS_DIR" "$HA_DIR" "$SCRIPT_DIR/volumes/state"
+STATE_DIR="$PROJECT_ROOT/state"
+echo "[setup] host directories to be created:"
+echo "  DB_DIR:    $DB_DIR"
+echo "  SOLR_DIR:  $SOLR_DIR"
+echo "  REDIS_DIR: $REDIS_DIR"
+echo "  HA_DIR:    $HA_DIR"
+echo "  STATE_DIR: $STATE_DIR"
+mkdir -p "$DB_DIR" "$SOLR_DIR" "$REDIS_DIR" "$HA_DIR" "$STATE_DIR"
+echo "[setup] created host directories."
 
 wait_healthy() {
   local svc="$1"; local timeout="${2:-900}"; local start now status cid
