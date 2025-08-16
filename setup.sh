@@ -180,23 +180,24 @@ else
   fi
 fi
 
-# At this point .env exists. Perform sanity checks and fail fast if it looks wrong.
+# At this point the chosen env file exists. Perform sanity checks and fail
+# fast if it looks wrong.
 # .env must be non-empty
-if [[ ! -s "$PROJECT_ROOT/.env" ]]; then
-  echo "ERROR: $PROJECT_ROOT/.env exists but is empty. Replace from .env.example or restore backup." >&2
+if [[ ! -s "$ENV_FILE" ]]; then
+  echo "ERROR: $ENV_FILE exists but is empty. Replace from .env.example or restore backup." >&2
   exit 1
 fi
 
 # Reject files that look like shell scripts accidentally saved as .env
-if grep -E -q '(^#!|^set[[:space:]]+-e|BASH_SOURCE|SCRIPT_DIR|function[[:space:]]|\$\{BASH_SOURCE|\$0)' "$PROJECT_ROOT/.env"; then
-  echo "ERROR: $PROJECT_ROOT/.env appears to contain shell script content. Please restore a valid .env from .env.example." >&2
+if grep -E -q '(^#!|^set[[:space:]]+-e|BASH_SOURCE|SCRIPT_DIR|function[[:space:]]|\$\{BASH_SOURCE|\$0)' "$ENV_FILE"; then
+  echo "ERROR: $ENV_FILE appears to contain shell script content. Please restore a valid .env from .env.example." >&2
   echo "If you intentionally saved .env from a downloaded file, edit it to only contain KEY=VALUE entries." >&2
   exit 1
 fi
 
 # Ensure there is at least one KEY=VALUE line
-if ! grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' "$PROJECT_ROOT/.env"; then
-  echo "ERROR: $PROJECT_ROOT/.env does not contain valid KEY=VALUE lines. Restore .env from .env.example." >&2
+if ! grep -Eq '^[A-Za-z_][A-Za-z0-9_]*=' "$ENV_FILE"; then
+  echo "ERROR: $ENV_FILE does not contain valid KEY=VALUE lines. Restore .env from .env.example." >&2
   exit 1
 fi
 
