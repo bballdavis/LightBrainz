@@ -105,40 +105,78 @@ if [[ -z "${PROJECT_ROOT:-}" ]]; then
 fi
 echo "[setup] project root: $PROJECT_ROOT"
 
-# Require a local `.env` file. Do not auto-create or download it here; fail
-# fast so users explicitly create and review their configuration before
-# running the setup. This prevents accidental overwrites or corrupted files.
-if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
-  echo "[setup] .env not found in $PROJECT_ROOT; attempting to create from .env.example and exiting so you can edit it."
-  if [[ -f "$PROJECT_ROOT/.env.example" ]]; then
-    cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
-    echo "Created $PROJECT_ROOT/.env from $PROJECT_ROOT/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
-    exit 0
-  fi
-
-  if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
-    cp "$SCRIPT_DIR/.env.example" "$PROJECT_ROOT/.env"
-    echo "Created $PROJECT_ROOT/.env from $SCRIPT_DIR/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
-    exit 0
-  fi
-
-  echo "Local .env.example not found; attempting to download .env.example from GitHub..."
-  url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
-  tmp=$(mktemp)
-  if curl -fsSL "$url" -o "$tmp"; then
-    if [[ -s "$tmp" ]]; then
-      mv "$tmp" "$PROJECT_ROOT/.env"
-      echo "Downloaded .env.example -> $PROJECT_ROOT/.env. Please edit it and re-run this script."
+# Require a local `.env` file. When running from an extracted `build/` directory
+# prefer the `.env` located in the `build/` (script) directory so users can
+# inspect/edit the configuration there before committing it to the project
+# root. Otherwise preserve the previous behaviour: require `.env` in
+# `PROJECT_ROOT` and, if missing, create it from available examples and exit.
+ENV_FILE=""
+if [[ "$(basename "$SCRIPT_DIR")" == "build" ]]; then
+  # Running from extracted build; prefer .env in the build dir
+  if [[ -f "$SCRIPT_DIR/.env" ]]; then
+    echo "[setup] using .env from $SCRIPT_DIR/.env"
+    ENV_FILE="$SCRIPT_DIR/.env"
+  else
+    echo "[setup] .env not found in $SCRIPT_DIR; attempting to create from .env.example and exiting so you can edit it."
+    if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+      cp "$SCRIPT_DIR/.env.example" "$SCRIPT_DIR/.env"
+      echo "Created $SCRIPT_DIR/.env from $SCRIPT_DIR/.env.example. Please edit $SCRIPT_DIR/.env and re-run this script."
       exit 0
+    fi
+    echo "Local .env.example not found in build; attempting to download .env.example from GitHub..."
+    url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
+    tmp=$(mktemp)
+    if curl -fsSL "$url" -o "$tmp"; then
+      if [[ -s "$tmp" ]]; then
+        mv "$tmp" "$SCRIPT_DIR/.env"
+        echo "Downloaded .env.example -> $SCRIPT_DIR/.env. Please edit it and re-run this script."
+        exit 0
+      else
+        rm -f "$tmp"
+        echo "Failed to download a non-empty .env.example from $url" >&2
+        exit 1
+      fi
     else
-      rm -f "$tmp"
-      echo "Failed to download a non-empty .env.example from $url" >&2
+      echo "Failed to download .env.example from $url" >&2
+      rm -f "$tmp" || true
       exit 1
     fi
-  else
-    echo "Failed to download .env.example from $url" >&2
-    rm -f "$tmp" || true
-    exit 1
+  fi
+else
+  # Normal path: require .env in PROJECT_ROOT
+  ENV_FILE="$PROJECT_ROOT/.env"
+  if [[ ! -f "$PROJECT_ROOT/.env" ]]; then
+    echo "[setup] .env not found in $PROJECT_ROOT; attempting to create from .env.example and exiting so you can edit it."
+    if [[ -f "$PROJECT_ROOT/.env.example" ]]; then
+      cp "$PROJECT_ROOT/.env.example" "$PROJECT_ROOT/.env"
+      echo "Created $PROJECT_ROOT/.env from $PROJECT_ROOT/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
+      exit 0
+    fi
+
+    if [[ -f "$SCRIPT_DIR/.env.example" ]]; then
+      cp "$SCRIPT_DIR/.env.example" "$PROJECT_ROOT/.env"
+      echo "Created $PROJECT_ROOT/.env from $SCRIPT_DIR/.env.example. Please edit $PROJECT_ROOT/.env and re-run this script."
+      exit 0
+    fi
+
+    echo "Local .env.example not found; attempting to download .env.example from GitHub..."
+    url="https://raw.githubusercontent.com/bballdavis/LightBrainz/main/.env.example"
+    tmp=$(mktemp)
+    if curl -fsSL "$url" -o "$tmp"; then
+      if [[ -s "$tmp" ]]; then
+        mv "$tmp" "$PROJECT_ROOT/.env"
+        echo "Downloaded .env.example -> $PROJECT_ROOT/.env. Please edit it and re-run this script."
+        exit 0
+      else
+        rm -f "$tmp"
+        echo "Failed to download a non-empty .env.example from $url" >&2
+        exit 1
+      fi
+    else
+      echo "Failed to download .env.example from $url" >&2
+      rm -f "$tmp" || true
+      exit 1
+    fi
   fi
 fi
 
