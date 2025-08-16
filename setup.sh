@@ -394,6 +394,15 @@ echo "  STATE_DIR: $STATE_DIR"
 mkdir -p "$DB_DIR" "$SOLR_DIR" "$REDIS_DIR" "$HA_DIR" "$STATE_DIR"
 echo "[setup] created host directories."
 
+# Ensure script files on the host are executable so mounting them into
+# containers (read-only) doesn't produce permission denied errors.
+for d in "$PROJECT_ROOT/docker/musicbrainz/scripts" "$PROJECT_ROOT/docker/hearring-aid/scripts"; do
+  if [[ -d "$d" ]]; then
+    echo "[setup] ensuring scripts in $d are executable"
+    chmod +x "$d"/*.sh || true
+  fi
+done
+
 wait_healthy() {
   local svc="$1"; local timeout="${2:-900}"; local start now status cid
   start="$(date +%s)"
