@@ -211,13 +211,15 @@ set +o allexport
 
 # Allow forcing rebuilds from environment. Default is false.
 FORCE_BUILD="${FORCE_BUILD:-false}"
+# Normalize FORCE_BUILD to lowercase in a POSIX-compatible way
+FORCE_BUILD_LC="$(printf '%s' "$FORCE_BUILD" | tr '[:upper:]' '[:lower:]')"
 # Builder image used to provide packages/tools without running apt in service
 # Dockerfiles on constrained hosts. Can be overridden in .env
 MB_BUILDER_IMAGE="${MB_BUILDER_IMAGE:-lightbrainz/musicbrainz-builder:latest}"
 
 ensure_builder_image() {
   local img="$MB_BUILDER_IMAGE" ctx="$SCRIPT_DIR/docker/builders/musicbrainz-builder"
-  if docker image inspect "$img" >/dev/null 2>&1 && [[ "${FORCE_BUILD,,}" != "true" ]]; then
+  if docker image inspect "$img" >/dev/null 2>&1 && [[ "$FORCE_BUILD_LC" != "true" ]]; then
     echo "[setup] builder image $img already present; skipping build"
     return 0
   fi
@@ -262,7 +264,7 @@ ensure_base_image() {
   if [[ -n "$upstream_sha" ]]; then
     echo "[setup] upstream master commit: $upstream_sha"
     # If an image exists, check existing image label against upstream commit
-    if [[ $image_present -eq 1 && "${FORCE_BUILD,,}" != "true" ]]; then
+  if [[ $image_present -eq 1 && "$FORCE_BUILD_LC" != "true" ]]; then
       existing_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.upstream_sha"}}' "$img" 2>/dev/null || true)
       if [[ -n "$existing_sha" && "$existing_sha" == "$upstream_sha" ]]; then
         echo "[setup] local image $img matches upstream commit $upstream_sha; skipping build"
@@ -320,7 +322,7 @@ ensure_base_image() {
   fi
   if [[ -n "$build_ctx_sha256" ]]; then
     echo "[setup] build context sha256: $build_ctx_sha256"
-    if [[ $image_present -eq 1 && "${FORCE_BUILD,,}" != "true" ]]; then
+  if [[ $image_present -eq 1 && "$FORCE_BUILD_LC" != "true" ]]; then
       existing_build_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.build_context_sha256"}}' "$img" 2>/dev/null || true)
       if [[ -n "$existing_build_sha" && "$existing_build_sha" == "$build_ctx_sha256" ]]; then
         echo "[setup] local image $img matches build-context checksum; skipping build"
