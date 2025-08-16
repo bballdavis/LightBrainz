@@ -227,7 +227,24 @@ ensure_base_image() {
     echo "[setup] base image $img already present locally"
     return 0
   fi
-  echo "[setup] building base image $img from upstream 'main' tarball..."
+  # Query upstream commit SHA for master branch so we can skip building when
+  # the built image already matches that SHA. If this check fails, we'll
+  # proceed with a build.
+  upstream_sha=""
+  upstream_sha=$(curl -fsSL "https://api.github.com/repos/metabrainz/musicbrainz-docker/commits/master" 2>/dev/null | grep -m1 '"sha"' | sed -E 's/[^[:alnum:]]*"sha"[:space:]*"([a-f0-9]+)".*/\1/') || true
+  if [[ -n "$upstream_sha" ]]; then
+    echo "[setup] upstream master commit: $upstream_sha"
+    # Check existing image label
+    existing_sha=$(docker image inspect --format '{{index .Config.Labels "lightbrainz.upstream_sha"}}' "$img" 2>/dev/null || true)
+    if [[ -n "$existing_sha" && "$existing_sha" == "$upstream_sha" ]]; then
+      echo "[setup] local image $img matches upstream commit $upstream_sha; skipping build"
+      return 0
+    fi
+  else
+    echo "[setup] warning: could not determine upstream commit SHA; will build image"
+  fi
+
+  echo "[setup] building base image $img from upstream 'master' tarball..."
   tmp=$(mktemp -d)
   if ! curl -fsSL "$BASE_REPO_TARBALL" | tar -xzf - -C "$tmp" --strip-components=1; then
     echo "ERROR: failed to download upstream repository tarball $BASE_REPO_TARBALL" >&2
@@ -244,7 +261,14 @@ ensure_base_image() {
     echo "[setup] using build context $build_ctx"
   fi
   echo "[setup] starting docker build (this may take several minutes)"
-  if docker build -t "$img" "$build_ctx"; then
+  # Build with a label so we can detect whether the image corresponds to a
+  # particular upstream commit in future runs.
+  build_cmd=(docker build -t "$img")
+  if [[ -n "$upstream_sha" ]]; then
+    build_cmd+=(--label "lightbrainz.upstream_sha=$upstream_sha")
+  fi
+  build_cmd+=("$build_ctx")
+  if "${build_cmd[@]}"; then
     echo "[setup] built and tagged base image $img"
     rm -rf "$tmp" || true
     return 0
