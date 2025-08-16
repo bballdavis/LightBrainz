@@ -439,7 +439,22 @@ if [[ -n "${MB_DUMPS_URL:-}" ]]; then
     fi
   fi
 fi
-if ! ensure_base_image || ! ensure_builder_image || ! docker compose run --build --rm mb-bootstrap; then
+
+# Ensure base and builder images are present (may build them). Then rebuild
+# service images that changed so updated Dockerfiles/entrypoints and host
+# script permissions are used at runtime.
+if ! ensure_base_image || ! ensure_builder_image; then
+  echo "[setup] Failed to prepare base or builder image" >&2
+  echo "[setup] Bootstrap will be attempted but may fail." >&2
+fi
+
+echo "[setup] rebuilding service images to pick up Dockerfile changes..."
+if ! docker compose build --no-cache mb-bootstrap hearring-aid mb-replicator mb-indexer; then
+  echo "[setup] Warning: service image rebuild failed; attempting bootstrap anyway" >&2
+fi
+
+echo "[setup] running bootstrap using rebuilt images (if available)"
+if ! docker compose run --rm mb-bootstrap; then
   echo "[setup] Bootstrap failed; replication may catch up."
 fi
 
