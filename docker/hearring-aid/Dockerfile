@@ -19,4 +19,4 @@ ENV MB_DB_HOST=musicbrainz-db \
 
 VOLUME ["/data"]
 
-ENTRYPOINT ["/usr/bin/tini", "--", "/app/scripts/entrypoint.sh"]
+ENTRYPOINT ["/bin/sh", "-c", "/app/scripts/entrypoint.sh"]

@@ -428,7 +428,7 @@ if [[ -n "${MB_DUMPS_URL:-}" ]]; then
     fi
   fi
 fi
-if ! ensure_builder_image || ! ensure_base_image || ! docker compose run --build --rm mb-bootstrap; then
+if ! ensure_base_image || ! ensure_builder_image || ! docker compose run --build --rm mb-bootstrap; then
   echo "[setup] Bootstrap failed; replication may catch up."
 fi
 
