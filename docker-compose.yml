@@ -5,7 +5,7 @@ services:
     environment:
       POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
       POSTGRES_USER: ${MB_DB_USER:-abc}
-      services:
+  # no unexpected keys here
     volumes:
       - ${MB_DB_DATA:-./volumes/musicbrainz-db}:/var/lib/postgresql/data
     healthcheck:
@@ -45,8 +45,8 @@ services:
       - ${MB_SOLR_DATA:-./volumes/musicbrainz-search}:/var/solr
 
   musicbrainz:
-  image: lightbrainz/musicbrainz:latest
-  build:
+    image: lightbrainz/musicbrainz:latest
+    build:
       context: ./docker/musicbrainz
       dockerfile: Dockerfile
     env_file:
