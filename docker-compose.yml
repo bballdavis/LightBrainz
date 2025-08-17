@@ -82,7 +82,6 @@ services:
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
-      args:
         BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
     env_file:
       - .env
@@ -111,7 +110,6 @@ services:
       # subdirectory but references `scripts/` in the context root.
       context: ./docker/musicbrainz
       dockerfile: replicator/Dockerfile
-      args:
     BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
