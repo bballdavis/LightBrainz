@@ -1,7 +1,7 @@
 services:
   musicbrainz-db:
-  image: postgres:13
-  container_name: lightbrainz-musicbrainz-db
+    image: postgres:13
+    container_name: lightbrainz-musicbrainz-db
     command: ["postgres", "-c", "shared_buffers=${MB_DB_SHARED_BUFFERS:-2GB}", "-c", "shared_preload_libraries=${MB_DB_PRELOAD_LIBS:-}"]
     environment:
       POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
@@ -20,8 +20,8 @@ services:
           - db
 
   redis:
-  image: redis:7
-  container_name: lightbrainz-redis
+    image: redis:7
+    container_name: lightbrainz-redis
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - ${MB_REDIS_DATA:-./volumes/musicbrainz-redis}:/data
