@@ -30,6 +30,27 @@ if [[ "${MB_IMPORT_DUMPS:-true}" == "true" ]]; then
     export MUSICBRAINZ_POSTGRES_SERVER="$host"
     export POSTGRES_USER="$user"
     export POSTGRES_PASSWORD="$pass"
+      # If operator has pre-approved data usage, create the appropriate
+      # marker file so createdb.sh / fetch-dump.sh will not prompt interactively.
+      # Set MB_DUMPS_CONSENT=non-commercial or MB_DUMPS_CONSENT=commercial
+      # in your environment or .env to skip the interactive question.
+      if [[ -n "${MB_DUMPS_CONSENT:-}" ]]; then
+        case "${MB_DUMPS_CONSENT}" in
+          commercial)
+            echo "[mb-bootstrap] Marking dumps dir as commercial use (MB_DUMPS_CONSENT=commercial)"
+            mkdir -p /media/dbdump || true
+            touch /media/dbdump/.for-commercial-use || true
+            ;;
+          non-commercial|noncommercial|non)
+            echo "[mb-bootstrap] Marking dumps dir as non-commercial use (MB_DUMPS_CONSENT=non-commercial)"
+            mkdir -p /media/dbdump || true
+            touch /media/dbdump/.for-non-commercial-use || true
+            ;;
+          *)
+            echo "[mb-bootstrap] MB_DUMPS_CONSENT set to unknown value: ${MB_DUMPS_CONSENT}; ignoring"
+            ;;
+        esac
+      fi
     # If a custom base URL provided, pass it through expected var
     if [[ -n "${MB_DUMPS_URL:-}" ]]; then
       # musicbrainz-docker uses MUSICBRAINZ_BASE_DOWNLOAD_URL as base; MB_DUMPS_URL can be a dir like fullexport/LATEST
@@ -57,6 +78,23 @@ if [[ "${MB_IMPORT_DUMPS:-true}" == "true" ]]; then
         export MUSICBRAINZ_POSTGRES_SERVER="$host"
         export POSTGRES_USER="$user"
         export POSTGRES_PASSWORD="$pass"
+          if [[ -n "${MB_DUMPS_CONSENT:-}" ]]; then
+            case "${MB_DUMPS_CONSENT}" in
+              commercial)
+                echo "[mb-bootstrap] Marking dumps dir as commercial use (MB_DUMPS_CONSENT=commercial)"
+                mkdir -p /media/dbdump || true
+                touch /media/dbdump/.for-commercial-use || true
+                ;;
+              non-commercial|noncommercial|non)
+                echo "[mb-bootstrap] Marking dumps dir as non-commercial use (MB_DUMPS_CONSENT=non-commercial)"
+                mkdir -p /media/dbdump || true
+                touch /media/dbdump/.for-non-commercial-use || true
+                ;;
+              *)
+                echo "[mb-bootstrap] MB_DUMPS_CONSENT set to unknown value: ${MB_DUMPS_CONSENT}; ignoring"
+                ;;
+            esac
+          fi
         if [[ -n "${MB_DUMPS_URL:-}" ]]; then
           export MUSICBRAINZ_BASE_DOWNLOAD_URL="${MB_DUMPS_URL}"
         fi
