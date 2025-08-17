@@ -312,6 +312,30 @@ ensure_base_image() {
     build_ctx="$tmp"
     echo "[setup] using build context $build_ctx"
   fi
+  # Allow lightweight, local fixes to upstream webpack config before building.
+  # This helps when upstream bundles are large and we want better code-splitting
+  # without maintaining a full fork. We only apply a minimal, reversible
+  # transformation: change cacheGroups chunks from 'initial' to 'all' so that
+  # async imports are also considered for splitting.
+    if [[ -f "$build_ctx/Dockerfile" ]]; then
+      echo "[setup] injecting upstream Dockerfile patch to adjust webpack settings during image build"
+      # Create a small fragment to run inside the image after the upstream git clone
+      patch_snippet=$'\n# BEGIN lightbrainz local patch: adjust webpack splitChunks/performance\nRUN if [ -f /musicbrainz-server/webpack/client.config.mjs ]; then \
+        sed -i.bak "s/chunks: \'initial\'/chunks: \'all\'/g" /musicbrainz-server/webpack/client.config.mjs || true; \
+        # Add conservative performance budgets to reduce webpack warnings (bytes)\n      sed -i.bak -E "s/(optimization:\s*\{)/\\1\\n      performance: { maxEntrypointSize: 2097152, maxAssetSize: 1048576 },/" /musicbrainz-server/webpack/client.config.mjs || true; \
+      fi\n# END lightbrainz local patch\n'
+      # Insert the snippet before the yarn install RUN line so the cloned repo exists
+      awk -v sn="$patch_snippet" 'BEGIN{added=0} /yarn install/ && added==0 { print sn; added=1 } { print }' "$build_ctx/Dockerfile" > "$build_ctx/Dockerfile.patched" && mv "$build_ctx/Dockerfile.patched" "$build_ctx/Dockerfile" || true
+      echo "[setup] Dockerfile patched (backup not created). If you prefer no modifications, remove this block from setup.sh."
+      # Replace git clone (which requires git in the build environment) with a
+      # curl + tar extraction that uses the same $MUSICBRAINZ_SERVER_VERSION env
+      # variable. This avoids builds failing on hosts without git (e.g., QNAP).
+      if grep -q "RUN git clone --depth=1 --branch \$MUSICBRAINZ_SERVER_VERSION" "$build_ctx/Dockerfile" 2>/dev/null; then
+        sed -i.bak "s|RUN git clone --depth=1 --branch \$MUSICBRAINZ_SERVER_VERSION https://github.com/metabrainz/musicbrainz-server.git musicbrainz-server|RUN mkdir -p /musicbrainz-server \
+      && curl -fsSL \"https://codeload.github.com/metabrainz/musicbrainz-server/tar.gz/\${MUSICBRAINZ_SERVER_VERSION}\" | tar -xz --strip-components=1 -C /musicbrainz-server|g" "$build_ctx/Dockerfile" || true
+        echo "[setup] Replaced git clone with curl+tar in Dockerfile to avoid requiring git during build"
+      fi
+    fi
   # compute build-context checksum so we can verify local images built from
   # the exact same sources and skip rebuilding when appropriate
   build_ctx_sha256=""
