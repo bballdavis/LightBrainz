@@ -79,10 +79,12 @@ services:
   hearring-aid:
     image: lightbrainz/hearring-aid:latest
     container_name: lightbrainz-hearring-aid
+    # Pass BASE_IMAGE as a build arg so it's valid in docker-compose schema
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
-    BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
     env_file:
       - .env
     environment:
@@ -103,6 +105,7 @@ services:
   mb-replicator:
     image: lightbrainz/mb-replicator:latest
     container_name: lightbrainz-mb-replicator
+    # Move BASE_IMAGE into build args to satisfy docker-compose schema
     build:
       # Use parent musicbrainz directory as build context so Dockerfile can
       # COPY the local `scripts/` directory into the image (scripts must be
@@ -110,7 +113,8 @@ services:
       # subdirectory but references `scripts/` in the context root.
       context: ./docker/musicbrainz
       dockerfile: replicator/Dockerfile
-    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     volumes:
@@ -138,10 +142,12 @@ services:
   mb-indexer:
     image: lightbrainz/mb-indexer:latest
     container_name: lightbrainz-mb-indexer
+    # Base image to use for builder; provided as a build arg
     build:
       context: ./docker/musicbrainz
       dockerfile: indexer/Dockerfile
-    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     volumes:
@@ -162,10 +168,12 @@ services:
   mb-bootstrap:
     image: lightbrainz/mb-bootstrap:latest
     container_name: lightbrainz-mb-bootstrap
+    # Provide BASE_IMAGE as build arg (valid location for compose)
     build:
       context: ./docker/musicbrainz
       dockerfile: bootstrap/Dockerfile
-    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
+      args:
+        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     environment:
