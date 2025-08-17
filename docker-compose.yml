@@ -143,7 +143,6 @@ services:
     build:
       context: ./docker/musicbrainz
       dockerfile: indexer/Dockerfile
-      args:
     BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
@@ -168,7 +167,6 @@ services:
     build:
       context: ./docker/musicbrainz
       dockerfile: bootstrap/Dockerfile
-      args:
     BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
