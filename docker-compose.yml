@@ -187,6 +187,7 @@ services:
       MB_DUMPS_URL: ${MB_DUMPS_URL:-}
     volumes:
       - ./docker/musicbrainz/scripts:/scripts:ro
+      - ${MB_DB_DUMP:-./volumes/dbdump}:/media/dbdump
     depends_on:
       - musicbrainz-db
     entrypoint: ["/bin/sh", "-c"]
