@@ -35,7 +35,8 @@ services:
           - mq
 
   search:
-    image: solr:8
+  image: solr:8
+  container_name: lightbrainz-search
     env_file:
       - .env
     environment:
@@ -120,7 +121,7 @@ services:
     depends_on:
       - musicbrainz-db
     restart: unless-stopped
-    entrypoint: ["/scripts/scheduler.sh"]
+  entrypoint: ["/bin/sh", "-c", "/scripts/scheduler.sh"]
     environment:
       SERVICE_ID: mb-replicator
       RUN_CMD: /scripts/replicate.sh
@@ -153,7 +154,7 @@ services:
       - musicbrainz
       - search
     restart: unless-stopped
-    entrypoint: ["/scripts/scheduler.sh"]
+  entrypoint: ["/bin/sh", "-c", "/scripts/scheduler.sh"]
     environment:
       SERVICE_ID: mb-indexer
       RUN_CMD: /scripts/reindex.sh
