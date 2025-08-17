@@ -40,25 +40,18 @@ mkdir -p "$SECRETS_DIR"
 chmod 755 "$SECRETS_DIR"
 echo -n "$MB_REPLICATION_ACCESS_TOKEN" > "$TOKEN_FILE"
 chmod 600 "$TOKEN_FILE"
-
-# Prepare logging
-LOG_DIR="/var/log"
-LOG_FILE="$LOG_DIR/mirror.log"
-mkdir -p "$LOG_DIR"
-touch "$LOG_FILE"
-chmod 644 "$LOG_FILE"
-
 echo "[mb-replicator] Starting replication via mirror.sh (type=${MB_REPLICATION_TYPE:-hourly})"
 
 # Run the official replication script once (as in musicbrainz-docker)
-# Use carton to ensure Perl deps/env are applied
+# Use carton to ensure Perl deps/env are applied. Stream all output to stdout
+# so Docker captures logs instead of writing to container files.
 set +e
-carton exec -- /musicbrainz-server/admin/cron/mirror.sh 2>&1 | tee -a "$LOG_FILE"
-rc=${PIPESTATUS[0]}
+carton exec -- /musicbrainz-server/admin/cron/mirror.sh 2>&1
+rc=$?
 set -e
 
 if [[ $rc -ne 0 ]]; then
-	echo "[mb-replicator] Replication failed with exit code $rc"
+	echo "[mb-replicator] Replication failed with exit code $rc" >&2
 	exit $rc
 fi
 

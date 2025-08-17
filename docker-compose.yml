@@ -1,6 +1,7 @@
 services:
   musicbrainz-db:
-    image: postgres:13
+  image: postgres:13
+  container_name: lightbrainz-musicbrainz-db
     command: ["postgres", "-c", "shared_buffers=${MB_DB_SHARED_BUFFERS:-2GB}", "-c", "shared_preload_libraries=${MB_DB_PRELOAD_LIBS:-}"]
     environment:
       POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
@@ -19,166 +20,205 @@ services:
           - db
 
   redis:
-    image: redis:7
+  image: redis:7
+  container_name: lightbrainz-redis
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - ${MB_REDIS_DATA:-./volumes/musicbrainz-redis}:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-    networks:
-      default:
-        aliases:
-          - mq
+      version: '3.8'
 
-  search:
-    image: solr:8
-    environment:
-      SOLR_HEAP: ${MB_SOLR_HEAP:-2g}
-    env_file:
-      - .env
-    ports:
-      - "${MB_SOLR_PORT:-8983}:8983"
-    volumes:
-      - ${MB_SOLR_DATA:-./volumes/musicbrainz-search}:/var/solr
+      services:
+        musicbrainz-db:
+          image: postgres:13
+          container_name: lightbrainz-musicbrainz-db
+          command: ["postgres", "-c", "shared_buffers=${MB_DB_SHARED_BUFFERS:-2GB}", "-c", "shared_preload_libraries=${MB_DB_PRELOAD_LIBS:-}"]
+          environment:
+            POSTGRES_DB: ${MB_DB_NAME:-musicbrainz}
+            POSTGRES_USER: ${MB_DB_USER:-abc}
+          volumes:
+            - ${MB_DB_DATA:-./volumes/musicbrainz-db}:/var/lib/postgresql/data
+          healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U ${MB_DB_USER:-abc} -d ${MB_DB_NAME:-musicbrainz}"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+          networks:
+            default:
+              aliases:
+                - db
 
-  musicbrainz:
-    image: lightbrainz/musicbrainz:latest
-    build:
-      context: ./docker/musicbrainz
-      dockerfile: Dockerfile
-    env_file:
-      - .env
-    environment:
-      MB_DB_TYPE: postgres
-      MB_DB_HOST: musicbrainz-db
-      MB_DB_PORT: 5432
-      MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-abc}
-      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
-      MB_REDIS_HOST: redis
-      SEARCH_SERVER: http://search:8983/solr
-      MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
-      MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
-      MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
-      MB_DUMPS_URL: ${MB_DUMPS_URL:-}
-      MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
-    ports:
-      - "${MB_WEB_PORT:-5800}:5000"
-    depends_on:
-      - musicbrainz-db
-      - redis
-      - search
-    restart: unless-stopped
+        redis:
+          image: redis:7
+          container_name: lightbrainz-redis
+          command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+          volumes:
+            - ${MB_REDIS_DATA:-./volumes/musicbrainz-redis}:/data
+          healthcheck:
+            test: ["CMD", "redis-cli", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 10
+          networks:
+            default:
+              aliases:
+                - mq
 
-  hearring-aid:
-    image: lightbrainz/hearring-aid:latest
-    build:
-      context: ./docker/hearring-aid
-      dockerfile: Dockerfile
-      args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
-    env_file:
-      - .env
-    environment:
-      MB_DB_HOST: musicbrainz-db
-      MB_DB_PORT: 5432
-      MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-abc}
-      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
-      MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
-      OUTPUT_DIR: /data
-      HA_CRON_SCHEDULE: ${HA_CRON_SCHEDULE:-weekly}
-    volumes:
-      - ${HA_OUTPUT_DIR:-./volumes/hearring-aid-data}:/data
-    depends_on:
-      - musicbrainz-db
-    restart: unless-stopped
+        search:
+          image: solr:8
+          env_file:
+            - .env
+          environment:
+            SOLR_HEAP: ${MB_SOLR_HEAP:-2g}
+          ports:
+            - "${MB_SOLR_PORT:-8983}:8983"
+          volumes:
+            - ${MB_SOLR_DATA:-./volumes/musicbrainz-search}:/var/solr
 
-  mb-replicator:
-    build:
-      # Use parent musicbrainz directory as build context so Dockerfile can
-      # COPY the local `scripts/` directory into the image (scripts must be
-      # inside the build context). The Dockerfile lives in the replicator
-      # subdirectory but references `scripts/` in the context root.
-      context: ./docker/musicbrainz
-      dockerfile: replicator/Dockerfile
-      args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
-    image: lightbrainz/mb-replicator:latest
-    env_file:
-      - .env
-    volumes:
-      - ./docker/musicbrainz/scripts:/scripts:ro
-      - ./volumes/state:/state
-    depends_on:
-      - musicbrainz-db
-    restart: unless-stopped
-    entrypoint: ["/bin/bash", "-lc"]
-    environment:
-      SERVICE_ID: mb-replicator
-      RUN_CMD: /scripts/replicate.sh
-      REPLICATION_FREQUENCY: ${REPLICATION_FREQUENCY:-weekly}
-      ENABLE_REPLICATION: ${ENABLE_REPLICATION:-true}
-      MB_DB_HOST: musicbrainz-db
-      MB_DB_PORT: 5432
-      MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-abc}
-      MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
-      MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
-      MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
-      MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
-    command: "/scripts/scheduler.sh"
+        musicbrainz:
+          image: lightbrainz/musicbrainz:latest
+          container_name: lightbrainz-musicbrainz
+          build:
+            context: ./docker/musicbrainz
+            dockerfile: Dockerfile
+          env_file:
+            - .env
+          environment:
+            MB_DB_TYPE: postgres
+            MB_DB_HOST: musicbrainz-db
+            MB_DB_PORT: 5432
+            MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
+            MB_DB_USER: ${MB_DB_USER:-abc}
+            MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
+            MB_REDIS_HOST: redis
+            SEARCH_SERVER: http://search:8983/solr
+            MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
+            MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
+            MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
+            MB_DUMPS_URL: ${MB_DUMPS_URL:-}
+            MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
+          ports:
+            - "${MB_WEB_PORT:-5800}:5000"
+          depends_on:
+            - musicbrainz-db
+            - redis
+            - search
+          restart: unless-stopped
 
-  mb-indexer:
-    build:
-      context: ./docker/musicbrainz
-      dockerfile: indexer/Dockerfile
-      args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
-    image: lightbrainz/mb-indexer:latest
-    env_file:
-      - .env
-    volumes:
-      - ./docker/musicbrainz/scripts:/scripts:ro
-      - ./volumes/state:/state
-    depends_on:
-      - musicbrainz
-      - search
-    restart: unless-stopped
-    entrypoint: ["/bin/bash", "-lc"]
-    environment:
-      SERVICE_ID: mb-indexer
-      RUN_CMD: /scripts/reindex.sh
-      INDEX_FREQUENCY: ${INDEX_FREQUENCY:-weekly}
-      MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
-      ENABLE_INDEXING: ${ENABLE_INDEXING:-true}
-    command: "/scripts/scheduler.sh"
+        hearring-aid:
+          image: lightbrainz/hearring-aid:latest
+          container_name: lightbrainz-hearring-aid
+          build:
+            context: ./docker/hearring-aid
+            dockerfile: Dockerfile
+            args:
+              BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
+          env_file:
+            - .env
+          environment:
+            MB_DB_HOST: musicbrainz-db
+            MB_DB_PORT: 5432
+            MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
+            MB_DB_USER: ${MB_DB_USER:-abc}
+            MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
+            MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
+            OUTPUT_DIR: /data
+            HA_CRON_SCHEDULE: ${HA_CRON_SCHEDULE:-weekly}
+          volumes:
+            - ${HA_OUTPUT_DIR:-./volumes/hearring-aid-data}:/data
+          depends_on:
+            - musicbrainz-db
+          restart: unless-stopped
 
-  mb-bootstrap:
-    build:
-      context: ./docker/musicbrainz
-      dockerfile: bootstrap/Dockerfile
-      args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
-    image: lightbrainz/mb-bootstrap:latest
-    env_file:
-      - .env
-    environment:
-      MB_DB_HOST: musicbrainz-db
-      MB_DB_PORT: 5432
-      MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
-      MB_DB_USER: ${MB_DB_USER:-abc}
-      MB_DB_PASSWORD: ${MB_DB_PASSWORD:-abc}
-      MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
-      MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
-      MB_DUMPS_URL: ${MB_DUMPS_URL:-}
-    volumes:
-      - ./docker/musicbrainz/scripts:/scripts:ro
-    depends_on:
-      - musicbrainz-db
-    entrypoint: ["/bin/sh", "-c"]
-    command: "/scripts/bootstrap.sh"
-    restart: "no"
+        mb-replicator:
+          image: lightbrainz/mb-replicator:latest
+          container_name: lightbrainz-mb-replicator
+          build:
+            # Use parent musicbrainz directory as build context so Dockerfile can
+            # COPY the local `scripts/` directory into the image (scripts must be
+            # inside the build context). The Dockerfile lives in the replicator
+            # subdirectory but references `scripts/` in the context root.
+            context: ./docker/musicbrainz
+            dockerfile: replicator/Dockerfile
+            args:
+              BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+          env_file:
+            - .env
+          volumes:
+            - ./docker/musicbrainz/scripts:/scripts:ro
+            - ./volumes/state:/state
+          depends_on:
+            - musicbrainz-db
+          restart: unless-stopped
+          entrypoint: ["/scripts/scheduler.sh"]
+          environment:
+            SERVICE_ID: mb-replicator
+            RUN_CMD: /scripts/replicate.sh
+            REPLICATION_FREQUENCY: ${REPLICATION_FREQUENCY:-weekly}
+            ENABLE_REPLICATION: ${ENABLE_REPLICATION:-true}
+            MB_DB_HOST: musicbrainz-db
+            MB_DB_PORT: 5432
+            MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
+            MB_DB_USER: ${MB_DB_USER:-abc}
+            MB_DB_PASS: ${MB_DB_PASSWORD:-abc}
+            MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
+            MB_REPLICATION_ACCESS_TOKEN: ${MB_REPLICATION_ACCESS_TOKEN:-}
+            MB_REPLICATION_TYPE: ${MB_REPLICATION_TYPE:-hourly}
+          command: "/scripts/scheduler.sh"
+
+        mb-indexer:
+          image: lightbrainz/mb-indexer:latest
+          container_name: lightbrainz-mb-indexer
+          build:
+            context: ./docker/musicbrainz
+            dockerfile: indexer/Dockerfile
+            args:
+              BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+          env_file:
+            - .env
+          volumes:
+            - ./docker/musicbrainz/scripts:/scripts:ro
+            - ./volumes/state:/state
+          depends_on:
+            - musicbrainz
+            - search
+          restart: unless-stopped
+          entrypoint: ["/scripts/scheduler.sh"]
+          environment:
+            SERVICE_ID: mb-indexer
+            RUN_CMD: /scripts/reindex.sh
+            INDEX_FREQUENCY: ${INDEX_FREQUENCY:-weekly}
+            MB_INDEX_ENTITIES: "${MB_INDEX_ENTITIES:-artist,release}"
+            ENABLE_INDEXING: ${ENABLE_INDEXING:-true}
+          command: "/scripts/scheduler.sh"
+
+        mb-bootstrap:
+          image: lightbrainz/mb-bootstrap:latest
+          container_name: lightbrainz-mb-bootstrap
+          build:
+            context: ./docker/musicbrainz
+            dockerfile: bootstrap/Dockerfile
+            args:
+              BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+          env_file:
+            - .env
+          environment:
+            MB_DB_HOST: musicbrainz-db
+            MB_DB_PORT: 5432
+            MB_DB_NAME: ${MB_DB_NAME:-musicbrainz}
+            MB_DB_USER: ${MB_DB_USER:-abc}
+            MB_DB_PASSWORD: ${MB_DB_PASSWORD:-abc}
+            MB_DB_SSLMODE: ${MB_DB_SSLMODE:-disable}
+            MB_IMPORT_DUMPS: ${MB_IMPORT_DUMPS:-true}
+            MB_DUMPS_URL: ${MB_DUMPS_URL:-}
+          volumes:
+            - ./docker/musicbrainz/scripts:/scripts:ro
+          depends_on:
+            - musicbrainz-db
+          entrypoint: ["/bin/sh", "-c"]
+          command: "/scripts/bootstrap.sh"
+          restart: "no"
+
+      networks:
+        default:
+          name: lightbrainz_default
