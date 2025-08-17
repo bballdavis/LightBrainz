@@ -112,7 +112,7 @@ services:
       context: ./docker/musicbrainz
       dockerfile: replicator/Dockerfile
       args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     volumes:
@@ -144,7 +144,7 @@ services:
       context: ./docker/musicbrainz
       dockerfile: indexer/Dockerfile
       args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     volumes:
@@ -169,7 +169,7 @@ services:
       context: ./docker/musicbrainz
       dockerfile: bootstrap/Dockerfile
       args:
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz-server:latest}
+    BASE_IMAGE: ${MB_BUILDER_IMAGE:-metabrainz/musicbrainz:latest}
     env_file:
       - .env
     environment:
