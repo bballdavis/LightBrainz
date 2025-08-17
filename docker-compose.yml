@@ -82,7 +82,7 @@ services:
     build:
       context: ./docker/hearring-aid
       dockerfile: Dockerfile
-        BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
+    BASE_IMAGE: ${MB_BUILDER_IMAGE:-python:3.11-slim}
     env_file:
       - .env
     environment:
